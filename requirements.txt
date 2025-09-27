@@ -1,0 +1,20 @@
+# Core transcription + alignment
+faster-whisper==1.*
+whisperx==3.4.2
+
+# CTranslate2 version range that WhisperX supports (and still has Metal builds)
+ctranslate2>=4.4,<4.5
+
+# PyTorch stack (used by WhisperX for alignment; CT2 handles Whisper inference)
+torch>=2.3,<2.6
+torchaudio>=2.3,<2.6
+
+# Utilities
+numpy>=1.24
+pandas>=2.0
+pydub>=0.25
+rich>=13.7
+
+# Hugging Face + accelerated downloads
+huggingface_hub>=0.23
+hf_transfer>=0.1.4
