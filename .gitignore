@@ -1,3 +1,5 @@
 models/
 outputs/
 inputs/
+.hf_home/
+.DS_Store
