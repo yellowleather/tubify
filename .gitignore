@@ -10,5 +10,12 @@ generated_images/
 __pycache__/
 **/__pycache__/
 
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+*.cover
+.hypothesis/
+
 # Environment variables (contains API keys)
 .env
