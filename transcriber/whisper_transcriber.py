@@ -234,17 +234,17 @@ class WhisperTranscriber:
 
         # Step 1: Normalize audio (cache the 16k WAV for reuse)
         if os.path.exists(wav):
-            rprint("[green]Step 1/3:[/green] Normalize audio → 16k mono WAV [cached]")
+            rprint("  [cyan]→[/cyan] Normalize audio → 16k mono WAV [dim]\[cached][/dim]")
         else:
-            rprint("[green]Step 1/3:[/green] Normalize audio → 16k mono WAV")
+            rprint("  [cyan]→[/cyan] Normalize audio → 16k mono WAV")
             ffmpeg_norm(input_file, wav)
 
         # Step 2: Transcribe
-        rprint("[green]Step 2/3:[/green] Transcribe with faster-whisper")
+        rprint("  [cyan]→[/cyan] Transcribe with faster-whisper")
         segments, lang = self._transcribe_faster_whisper(wav)
 
         # Step 3: Align (word-level)
-        rprint("[green]Step 3/3:[/green] Align with WhisperX (word-level)")
+        rprint("  [cyan]→[/cyan] Align with WhisperX (word-level)")
         aligned = self._align_whisperx(segments, wav, lang)
         aligned_segments = aligned["segments"]
 

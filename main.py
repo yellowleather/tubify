@@ -2,18 +2,23 @@
 """
 main.py
 
-Main entry point for Tubify - Complete video-to-transcript pipeline.
-Downloads ML models, videos from YouTube, and transcribes them.
+Main entry point for Tubify - Complete video-to-image-prompt pipeline.
+Downloads ML models, videos from YouTube, transcribes them, and generates image prompts.
 """
 
 import argparse
 import sys
 from pathlib import Path
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 from video_downloader import get_downloader
 from video_downloader.youtube_downloader import normalize_youtube_url
 from model_downloader import get_downloader as get_model_downloader, WHISPER_MODELS
 from transcriber import get_transcriber
+from image_prompt_generator import get_generator as get_prompt_generator
 
 
 def get_video_filename(video_url: str, output_dir: str) -> str:
@@ -52,25 +57,38 @@ def main() -> int:
     1. Downloads ML models (if needed)
     2. Downloads video from YouTube (if needed)
     3. Transcribes video with word-level timestamps
+    4. Generates image prompts from transcript using LLM
 
     Returns:
         Exit code: 0 on success, non-zero on failure
     """
     parser = argparse.ArgumentParser(
-        description="Tubify - Complete pipeline: download, transcribe, and process videos",
+        description="Tubify - Complete pipeline: download, transcribe, and generate image prompts",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Complete pipeline with default settings (tiny model)
+  # Complete pipeline with default settings (Ollama backend - no API key needed)
   python main.py --video_url "https://www.youtube.com/watch?v=..."
 
-  # Use larger model for better accuracy
+  # Use larger Whisper model for better transcription
   python main.py --video_url "https://www.youtube.com/shorts/QMJAUg2snas" --model large-v3
 
-  # Custom directories
-  python main.py --video_url "https://www.youtube.com/watch?v=..." --video-dir downloads/ --models-dir /path/to/models
+  # Use OpenAI GPT for prompt generation
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --prompt-backend openai
 
-Available models: """ + ", ".join(WHISPER_MODELS.keys())
+  # Use Anthropic Claude for prompt generation
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --prompt-backend anthropic
+
+  # Use different Ollama model for prompt generation
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --prompt-model llama3
+
+  # Custom model and directories
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --model tiny --prompt-backend anthropic --prompt-model claude-3-5-sonnet-20241022
+
+  # Custom output directories
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --video-dir downloads/ --models-dir /path/to/models --prompts-dir my_prompts/
+
+Available Whisper models: """ + ", ".join(WHISPER_MODELS.keys())
     )
 
     parser.add_argument(
@@ -86,8 +104,8 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
     parser.add_argument(
         "--model",
         choices=list(WHISPER_MODELS.keys()),
-        default="tiny",
-        help="Whisper model to use for transcription (default: tiny)"
+        default="large-v3",
+        help="Whisper model to use for transcription (default: large-v3)"
     )
     parser.add_argument(
         "--models-dir",
@@ -99,6 +117,22 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
         default="outputs",
         help="Base directory for transcription outputs (default: outputs/)"
     )
+    parser.add_argument(
+        "--prompt-backend",
+        default="ollama",
+        choices=["openai", "anthropic", "ollama"],
+        help="LLM backend for prompt generation (default: ollama)"
+    )
+    parser.add_argument(
+        "--prompt-model",
+        default=None,
+        help="LLM model for prompt generation (e.g., gpt-4o-mini, claude-3-5-sonnet-20241022, llama3)"
+    )
+    parser.add_argument(
+        "--prompts-dir",
+        default="image_prompts",
+        help="Directory for generated image prompts (default: image_prompts/)"
+    )
 
     args = parser.parse_args()
 
@@ -106,14 +140,17 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
     video_dir = Path(args.video_dir)
     models_dir = Path(args.models_dir)
     transcribe_base_dir = Path(args.transcribe_dir)
+    prompts_dir = Path(args.prompts_dir)
+
+    total_steps = 4
 
     print(f"[Tubify] ═══════════════════════════════════════════════")
-    print(f"[Tubify] Tubify Pipeline Started")
+    print(f"[Tubify] Tubify Pipeline Started (4 steps)")
     print(f"[Tubify] ═══════════════════════════════════════════════")
     print()
 
     # Step 1: Ensure ML model is available (download if needed)
-    print(f"[Tubify] Step 1/3: Checking ML model...")
+    print(f"[Tubify] Step 1/{total_steps}: Checking ML model...")
     print(f"[Tubify] Model: {args.model}")
     print(f"[Tubify] Models directory: {models_dir.absolute()}")
     print()
@@ -135,7 +172,7 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
     print()
 
     # Step 2: Download video
-    print(f"[Tubify] Step 2/3: Downloading video...")
+    print(f"[Tubify] Step 2/{total_steps}: Downloading video...")
     print(f"[Tubify] URL: {args.video_url}")
     print(f"[Tubify] Video directory: {video_dir.absolute()}")
     print()
@@ -160,7 +197,7 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
     print()
 
     # Step 3: Transcribe video
-    print(f"[Tubify] Step 3/3: Transcribing video...")
+    print(f"[Tubify] Step 3/{total_steps}: Transcribing video...")
     print(f"[Tubify] Model: {args.model}")
     print(f"[Tubify] Video: {video_file}")
 
@@ -179,7 +216,7 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
         )
 
         # Perform transcription
-        result = transcriber.transcribe(
+        transcript_result = transcriber.transcribe(
             input_file=video_file,
             output_dir=str(transcribe_output_dir)
         )
@@ -188,7 +225,7 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
         print(f"[Tubify] Transcription complete!")
         print()
         print("[Tubify] Generated files:")
-        for file_path in result.values():
+        for file_path in transcript_result.values():
             print(f"  {file_path}")
         print()
 
@@ -199,10 +236,60 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
         traceback.print_exc()
         return 1
 
+    # Step 4: Generate image prompts
+    print(f"[Tubify] Step 4/{total_steps}: Generating image prompts...")
+    print(f"[Tubify] Backend: {args.prompt_backend}")
+    print(f"[Tubify] Model: {args.prompt_model or 'default'}")
+    print(f"[Tubify] Output directory: {prompts_dir.absolute()}")
+    print()
+
+    try:
+        # Get prompt generator using factory pattern
+        prompt_generator = get_prompt_generator(
+            backend=args.prompt_backend,
+            model=args.prompt_model,
+            temperature=0.7
+        )
+
+        # Generate prompts from transcript
+        prompt_result = prompt_generator.generate_prompts(
+            transcript_file=transcript_result['aligned_json'],
+            output_dir=str(prompts_dir)
+        )
+
+        print()
+        print(f"[Tubify] Image prompt generation complete!")
+        print(f"[Tubify] Generated {len(prompt_result['sections'])} prompts")
+        print(f"[Tubify] Saved to: {prompt_result['prompts_file']}")
+        print()
+
+    except ImportError as e:
+        print()
+        print(f"[Tubify] Error: Prompt generation failed - {e}")
+        print(f"[Tubify] Install required package: pip install {args.prompt_backend}")
+        print()
+        return 1
+    except Exception as e:
+        print()
+        print(f"[Tubify] Error: Prompt generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
     # Pipeline complete
     print(f"[Tubify] ═══════════════════════════════════════════════")
     print(f"[Tubify] Pipeline Complete!")
     print(f"[Tubify] ═══════════════════════════════════════════════")
+    print()
+    print("[Tubify] Generated outputs:")
+    print(f"  Transcript: {transcript_result.get('aligned_json', 'N/A')}")
+    print(f"  Prompts:    {prompt_result.get('prompts_file', 'N/A')}")
+    print(f"  Sections:   {len(prompt_result.get('sections', []))}")
+    print()
+    print("[Tubify] Next steps:")
+    print(f"  1. Review generated prompts: {prompt_result.get('prompts_file', 'N/A')}")
+    print(f"  2. Generate images from prompts (coming soon)")
+    print(f"  3. Animate images to create video (coming soon)")
 
     return 0
 

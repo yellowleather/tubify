@@ -1,8 +1,13 @@
 models/
 outputs/
 inputs/
+image_prompts/
 .hf_home/
+.ct2_home/
 .DS_Store
 .saved_chats/
 __pycache__/
 **/__pycache__/
+
+# Environment variables (contains API keys)
+.env

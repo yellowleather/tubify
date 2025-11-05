@@ -21,3 +21,11 @@ hf_transfer>=0.1.4
 
 # YouTube video downloading
 yt-dlp>=2024.10
+
+# Image prompt generation (LLM backends)
+openai>=1.0
+anthropic>=0.25
+requests>=2.31
+
+# Environment variable management
+python-dotenv>=1.0
