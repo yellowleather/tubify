@@ -19,6 +19,7 @@ from video_downloader.youtube_downloader import normalize_youtube_url
 from model_downloader import get_downloader as get_model_downloader, WHISPER_MODELS
 from transcriber import get_transcriber
 from image_prompt_generator import get_generator as get_prompt_generator
+from image_generator import get_generator as get_image_generator
 
 
 def get_video_filename(video_url: str, output_dir: str) -> str:
@@ -58,12 +59,13 @@ def main() -> int:
     2. Downloads video from YouTube (if needed)
     3. Transcribes video with word-level timestamps
     4. Generates image prompts from transcript using LLM
+    5. Generates images from prompts using image generation model
 
     Returns:
         Exit code: 0 on success, non-zero on failure
     """
     parser = argparse.ArgumentParser(
-        description="Tubify - Complete pipeline: download, transcribe, and generate image prompts",
+        description="Tubify - Complete pipeline: download, transcribe, generate prompts, and create images",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -82,11 +84,17 @@ Examples:
   # Use different Ollama model for prompt generation
   python main.py --video_url "https://www.youtube.com/watch?v=..." --prompt-model llama3
 
+  # Use OpenAI DALL-E for image generation
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --image-backend openai
+
+  # Use different Stable Diffusion model for image generation
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --image-model stabilityai/sdxl-turbo --image-steps 4
+
   # Custom model and directories
   python main.py --video_url "https://www.youtube.com/watch?v=..." --model tiny --prompt-backend anthropic --prompt-model claude-3-5-sonnet-20241022
 
   # Custom output directories
-  python main.py --video_url "https://www.youtube.com/watch?v=..." --video-dir downloads/ --models-dir /path/to/models --prompts-dir my_prompts/
+  python main.py --video_url "https://www.youtube.com/watch?v=..." --video-dir downloads/ --models-dir /path/to/models --prompts-dir my_prompts/ --images-dir my_images/
 
 Available Whisper models: """ + ", ".join(WHISPER_MODELS.keys())
     )
@@ -133,6 +141,28 @@ Available Whisper models: """ + ", ".join(WHISPER_MODELS.keys())
         default="image_prompts",
         help="Directory for generated image prompts (default: image_prompts/)"
     )
+    parser.add_argument(
+        "--image-backend",
+        default="diffusers",
+        choices=["diffusers", "openai", "stability"],
+        help="Image generation backend (default: diffusers)"
+    )
+    parser.add_argument(
+        "--image-model",
+        default=None,
+        help="Image model to use (e.g., stabilityai/stable-diffusion-xl-base-1.0, dall-e-3, sd3-large)"
+    )
+    parser.add_argument(
+        "--images-dir",
+        default="generated_images",
+        help="Directory for generated images (default: generated_images/)"
+    )
+    parser.add_argument(
+        "--image-steps",
+        type=int,
+        default=30,
+        help="Number of inference steps for local generation (default: 30)"
+    )
 
     args = parser.parse_args()
 
@@ -141,11 +171,12 @@ Available Whisper models: """ + ", ".join(WHISPER_MODELS.keys())
     models_dir = Path(args.models_dir)
     transcribe_base_dir = Path(args.transcribe_dir)
     prompts_dir = Path(args.prompts_dir)
+    images_dir = Path(args.images_dir)
 
-    total_steps = 4
+    total_steps = 5
 
     print(f"[Tubify] ═══════════════════════════════════════════════")
-    print(f"[Tubify] Tubify Pipeline Started (4 steps)")
+    print(f"[Tubify] Tubify Pipeline Started (5 steps)")
     print(f"[Tubify] ═══════════════════════════════════════════════")
     print()
 
@@ -276,6 +307,50 @@ Available Whisper models: """ + ", ".join(WHISPER_MODELS.keys())
         traceback.print_exc()
         return 1
 
+    # Step 5: Generate images from prompts
+    print(f"[Tubify] Step 5/{total_steps}: Generating images...")
+    print(f"[Tubify] Backend: {args.image_backend}")
+    print(f"[Tubify] Model: {args.image_model or 'default'}")
+    print(f"[Tubify] Output directory: {images_dir.absolute()}")
+    print()
+
+    try:
+        # Get image generator using factory pattern
+        image_generator = get_image_generator(
+            backend=args.image_backend,
+            model=args.image_model,
+            device="auto",
+            num_inference_steps=args.image_steps,
+        )
+
+        # Generate images from prompts
+        image_result = image_generator.generate_images(
+            prompts_file=prompt_result['prompts_file'],
+            output_dir=str(images_dir)
+        )
+
+        print()
+        print(f"[Tubify] Image generation complete!")
+        print(f"[Tubify] Generated {image_result['num_images']} images")
+        print(f"[Tubify] Saved to: {image_result['output_dir']}")
+        print()
+
+    except ImportError as e:
+        print()
+        print(f"[Tubify] Error: Image generation failed - {e}")
+        if args.image_backend == "diffusers":
+            print(f"[Tubify] Install required packages: pip install diffusers torch torchvision transformers accelerate")
+        elif args.image_backend == "openai":
+            print(f"[Tubify] Install required package: pip install openai")
+        print()
+        return 1
+    except Exception as e:
+        print()
+        print(f"[Tubify] Error: Image generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
     # Pipeline complete
     print(f"[Tubify] ═══════════════════════════════════════════════")
     print(f"[Tubify] Pipeline Complete!")
@@ -284,12 +359,13 @@ Available Whisper models: """ + ", ".join(WHISPER_MODELS.keys())
     print("[Tubify] Generated outputs:")
     print(f"  Transcript: {transcript_result.get('aligned_json', 'N/A')}")
     print(f"  Prompts:    {prompt_result.get('prompts_file', 'N/A')}")
+    print(f"  Images:     {image_result.get('output_dir', 'N/A')}")
     print(f"  Sections:   {len(prompt_result.get('sections', []))}")
+    print(f"  Generated:  {image_result.get('num_images', 0)} images")
     print()
     print("[Tubify] Next steps:")
-    print(f"  1. Review generated prompts: {prompt_result.get('prompts_file', 'N/A')}")
-    print(f"  2. Generate images from prompts (coming soon)")
-    print(f"  3. Animate images to create video (coming soon)")
+    print(f"  1. Review generated images: {image_result.get('output_dir', 'N/A')}")
+    print(f"  2. Animate images to create video (coming soon)")
 
     return 0
 

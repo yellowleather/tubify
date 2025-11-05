@@ -2,6 +2,7 @@ models/
 outputs/
 inputs/
 image_prompts/
+generated_images/
 .hf_home/
 .ct2_home/
 .DS_Store
