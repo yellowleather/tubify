@@ -23,8 +23,8 @@ brew install uv
 
 ### Run directly (no venv, no pip)
 ```bash
-chmod +x run.py
-./run.py inputs/my_video.mp4 --outdir outputs
+chmod +x transcribe.py
+./transcribe.py inputs/my_video.mp4 --outdir outputs
 ```
 
 `uv` will detect `requirements.txt` in the project root, create/reuse a local environment under `.uv/`, and run the script with all deps.
@@ -57,7 +57,7 @@ Put your media in `inputs/` or anywhere. Then:
 
 ```bash
 # Transcribe + align + export captions and CSV
-python run.py inputs/my_video.mp4 --outdir outputs
+python transcribe.py inputs/my_video.mp4 --outdir outputs
 ```
 
 You’ll get:

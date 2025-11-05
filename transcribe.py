@@ -127,7 +127,7 @@ def main():
     if not os.path.isfile(args.input):
         print(f"[red]Input file not found:[/red] {args.input}")
         print("Hint: put your media under ./inputs and pass the real name, e.g.:")
-        print("  ./run.py 'inputs/why_hinglish_hated.mp4' --outdir outputs --model large-v3")
+        print("  ./transcribe.py 'inputs/why_hinglish_hated.mp4' --outdir outputs --model large-v3")
         sys.exit(1)
 
     os.makedirs(args.outdir, exist_ok=True)

@@ -7,7 +7,7 @@ OUTDIR?=outputs/clips
 .PHONY: transcribe clips subclips
 
 transcribe:
-	python run.py $(IN) --outdir $(OUT)
+	python transcribe.py $(IN) --outdir $(OUT)
 
 clips:
 	python cutter/build_clips.py $(JSON) --strategy pause --min-pause 0.40 --max-clip 18.0 --out $(CSV)
