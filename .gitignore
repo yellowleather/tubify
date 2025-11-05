@@ -3,3 +3,6 @@ outputs/
 inputs/
 .hf_home/
 .DS_Store
+.saved_chats/
+__pycache__/
+**/__pycache__/

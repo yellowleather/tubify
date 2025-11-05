@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from video_downloader import get_downloader
+from video_downloader.youtube_downloader import normalize_youtube_url
 from model_downloader import get_downloader as get_model_downloader, WHISPER_MODELS
 from transcriber import get_transcriber
 
@@ -28,15 +29,16 @@ def get_video_filename(video_url: str, output_dir: str) -> str:
     """
     import yt_dlp
 
-    # Normalize Shorts URLs to /watch URLs
-    norm_url = video_url.replace("/shorts/", "/watch?v=")
+    # Normalize URLs in the same way as the downloader (handles Shorts, etc.)
+    norm_url = normalize_youtube_url(video_url)
 
     # yt-dlp options matching those in youtube_downloader
     ydl_opts = {
-        "outtmpl": f"{output_dir}/%(title)s.%(ext)s",
+        "outtmpl": str(Path(output_dir) / "%(title)s.%(ext)s"),
         "format": "best",
         "quiet": True,
         "no_warnings": True,
+        "restrictfilenames": True,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -65,9 +67,6 @@ Examples:
   # Use larger model for better accuracy
   python main.py --video_url "https://www.youtube.com/shorts/QMJAUg2snas" --model large-v3
 
-  # Skip model download (if already downloaded)
-  python main.py --video_url "https://www.youtube.com/watch?v=..." --skip-model-download
-
   # Custom directories
   python main.py --video_url "https://www.youtube.com/watch?v=..." --video-dir downloads/ --models-dir /path/to/models
 
@@ -89,11 +88,6 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
         choices=list(WHISPER_MODELS.keys()),
         default="tiny",
         help="Whisper model to use for transcription (default: tiny)"
-    )
-    parser.add_argument(
-        "--skip-model-download",
-        action="store_true",
-        help="Skip ML model download step"
     )
     parser.add_argument(
         "--models-dir",
@@ -118,31 +112,27 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
     print(f"[Tubify] ═══════════════════════════════════════════════")
     print()
 
-    # Step 1: Download ML models
-    if not args.skip_model_download:
-        print(f"[Tubify] Step 1/3: Downloading ML models...")
-        print(f"[Tubify] Model: {args.model}")
-        print(f"[Tubify] Models directory: {models_dir.absolute()}")
-        print()
+    # Step 1: Ensure ML model is available (download if needed)
+    print(f"[Tubify] Step 1/3: Checking ML model...")
+    print(f"[Tubify] Model: {args.model}")
+    print(f"[Tubify] Models directory: {models_dir.absolute()}")
+    print()
 
-        model_downloader = get_model_downloader("huggingface", models_dir=str(models_dir))
-        model_result = model_downloader.download(
-            models=[args.model],
-            force=False,
-            skip_space_check=True
-        )
+    model_downloader = get_model_downloader("huggingface", models_dir=str(models_dir))
+    model_result = model_downloader.download(
+        models=[args.model],
+        force=False,
+        skip_space_check=True
+    )
 
-        if not model_result["successful"]:
-            print()
-            print(f"[Tubify] Model download failed!")
-            return 1
+    if not model_result["successful"]:
+        print()
+        print(f"[Tubify] Model download failed!")
+        return 1
 
-        print()
-        print(f"[Tubify] Model ready: {args.model}")
-        print()
-    else:
-        print(f"[Tubify] Step 1/3: Skipping model download (--skip-model-download)")
-        print()
+    print()
+    print(f"[Tubify] Model ready: {args.model}")
+    print()
 
     # Step 2: Download video
     print(f"[Tubify] Step 2/3: Downloading video...")
@@ -213,10 +203,6 @@ Available models: """ + ", ".join(WHISPER_MODELS.keys())
     print(f"[Tubify] ═══════════════════════════════════════════════")
     print(f"[Tubify] Pipeline Complete!")
     print(f"[Tubify] ═══════════════════════════════════════════════")
-    print()
-    print("[Tubify] Next steps:")
-    print(f"  1. Review transcript: {result.get('aligned_json', 'N/A')}")
-    print(f"  2. Build clips: python cutter/build_clips.py {result.get('aligned_json', '<aligned_json>')}")
 
     return 0
 
