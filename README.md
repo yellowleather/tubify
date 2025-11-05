@@ -1,45 +1,28 @@
-# ASR Local Agent (Apple Silicon friendly)
+# Tubify
 
-Fully local pipeline for transcripts + **word-level timestamps** on Apple Silicon (M-series).
-- Transcribe with **faster-whisper**
-- Align with **WhisperX** (word timestamps)
-- Export **SRT/VTT**, `aligned.json`, and **clips.csv**
-- Optional: auto-export subclips (H.264) from `clips.csv` via ffmpeg
+Local-first pipeline that pulls a YouTube video, grabs the right Whisper model, and ships aligned transcripts with zero cloud calls. Built for Apple Silicon but works anywhere ffmpeg and yt-dlp run.
 
-## 0) Prereqs
-- macOS (Apple Silicon recommended)
+## Features
+- Downloads and caches Whisper models (via Hugging Face) automatically.
+- Normalizes Shorts/watch URLs and fetches videos with yt-dlp.
+- Transcribes with faster-whisper, then aligns every word with WhisperX.
+- Emits `aligned.json`, `srt`, `vtt`, `clips.csv`, and a normalized 16 kHz WAV.
+
+## Prerequisites
 - Python 3.11+
-- Homebrew `ffmpeg` installed: `brew install ffmpeg`
-- Create and activate a venv
+- ffmpeg in your PATH (`brew install ffmpeg` on macOS)
+- Optional but recommended: [uv](https://docs.astral.sh/uv/) for zero-setup execution
 
-
-## Zero-setup with `uv` (recommended)
-This project supports [uv](https://docs.astral.sh/uv/) so you don't need to manage virtualenvs.
-
-### Install uv (macOS)
+## Quick Start (uv)
 ```bash
 brew install uv
+chmod +x main.py
+./main.py --video_url https://www.youtube.com/shorts/QMJAUg2snas --model tiny
 ```
 
-### Run directly (no venv, no pip)
-```bash
-chmod +x transcribe.py
-./transcribe.py inputs/my_video.mp4 --outdir outputs
-```
+`uv` will resolve `requirements.txt`, create a local environment under `.uv/`, and run the pipeline without touching your global Python install.
 
-`uv` will detect `requirements.txt` in the project root, create/reuse a local environment under `.uv/`, and run the script with all deps.
-
-You can also run the helper tools:
-```bash
-chmod +x cutter/build_clips.py cutter/export_subclips.py
-./cutter/build_clips.py outputs/my_video.aligned.json --strategy pause --min-pause 0.40 --max-clip 18.0 --out outputs/my_video.clips.csv
-./cutter/export_subclips.py inputs/my_video.mp4 outputs/my_video.clips.csv --outdir outputs/clips
-```
-
-> If you prefer classic virtualenvs, the original instructions below still work.
-
-
-## 1) Install
+## Classic Virtualenv Setup
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -47,69 +30,48 @@ python -m pip install --upgrade pip wheel setuptools
 pip install -r requirements.txt
 ```
 
-> Torch uses MPS on Apple Silicon automatically. If you hit a Torch wheel issue, try:
-> `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu` (then rerun `pip install whisperx`).
-> WhisperX alignment will still work on CPU/MPS; it's slower than CUDA but fine for solo projects.
-
-## 2) Usage
-
-Put your media in `inputs/` or anywhere. Then:
-
+## Run the Pipeline
 ```bash
-# Transcribe + align + export captions and CSV
-python transcribe.py inputs/my_video.mp4 --outdir outputs
+./main.py --video_url <youtube_url> [--model large-v3] [--video-dir inputs] \
+          [--models-dir models] [--transcribe-dir outputs]
 ```
 
-You’ll get:
-- `outputs/my_video.aligned.json` – segments, each with **words[{start,end,word}]**
-- `outputs/my_video.srt` and `outputs/my_video.vtt`
-- `outputs/my_video.clips.csv` – simple sentence-level clips (start,end,text)
+Command-line options:
+- `--video_url` *(required)*: Shorts or watch URL. Shorts are auto-normalized.
+- `--model`: one of `tiny`, `base`, `small`, `medium`, `large-v3` (default `tiny`).
+- `--video-dir`: destination for downloads (default `inputs/`).
+- `--models-dir`: cache directory for Whisper models (default `models/`).
+- `--transcribe-dir`: root folder for outputs (default `outputs/`).
 
-### Build custom clips from aligned words
-```bash
-# Strategy can be "pause" (split on silences) or "sentence" (split on punctuation)
-python cutter/build_clips.py outputs/my_video.aligned.json   --strategy pause --min-pause 0.40 --max-clip 18.0 --out outputs/my_video.clips.csv
+Run output example:
+```
+outputs/
+  Video_Name/
+    tiny/
+      Video_Name.aligned.json
+      Video_Name.srt
+      Video_Name.vtt
+      Video_Name.clips.csv
+      Video_Name_16k.wav
 ```
 
-### Export actual subclips (mp4) with ffmpeg
-```bash
-python cutter/export_subclips.py inputs/my_video.mp4 outputs/my_video.clips.csv --outdir outputs/clips
-```
+## Improving Transcript Quality
+- Prefer `large-v3` for Hinglish and subject-heavy content; smaller models trade accuracy for speed.
+- Feed clean audio when possible (reduce music beds, record from source files instead of screen captures).
+- Force a language if auto-detect slips: edit the transcriber to pass `language="hi"` or `"en"` into faster-whisper.
+- Tweak post-processing: the generated `.aligned.json` can be cleaned with your own script/LLM pass for punctuation or terminology fixes.
 
-## 3) Makefile helpers
-```bash
-make transcribe IN=inputs/my_video.mp4 OUT=outputs
-make clips      JSON=outputs/my_video.aligned.json OUT=outputs/my_video.clips.csv
-make subclips   IN=inputs/my_video.mp4 CSV=outputs/my_video.clips.csv OUTDIR=outputs/clips
-```
+## Troubleshooting
+- `yt-dlp` 403/PO Token warnings: ensure yt-dlp is up to date (`pip install -U yt-dlp`).
+- `compute_type 'float16' unsupported`: CTranslate2 fell back to INT8, which is normal on CPU. Install Metal-enabled CTranslate2 and rerun if you need GPU speed (`pip install -U ctranslate2`).
+- Alignment slow? WhisperX runs on CPU by default. You can skip alignment by short-circuiting `_align_whisperx` in `transcriber/whisper_transcriber.py` if you only need segment timestamps.
 
-## 4) Notes
-- For Hinglish/code-switching, `large-v3` works very well. You can force a language with `--language hi` or `--language en` if auto-detect errs.
-- If memory is tight, switch `--model medium` or `--compute-type int8`.
-- For interviews, consider adding diarization (not included by default; pyannote is heavy on Mac).
+## Repo Layout
+- `main.py` – orchestrates model download → video download → transcription.
+- `model_downloader/` – Hugging Face fetch helpers.
+- `video_downloader/` – yt-dlp wrapper with Shorts normalization.
+- `transcriber/` – faster-whisper + WhisperX implementation.
+- `inputs/`, `models/`, `outputs/` – default working directories (ignored by git).
 
-## 5) Outputs format
-- **aligned.json**:
-```json
-{
-  "language": "en",
-  "segments": [
-    {
-      "start": 1.12,
-      "end": 3.80,
-      "text": "Hello world",
-      "words": [
-        {"start":1.12,"end":1.45,"word":"Hello"},
-        {"start":1.46,"end":1.70,"word":"world"}
-      ]
-    }
-  ]
-}
-```
-- **clips.csv**: CSV with header `start,end,text`.
-
-## 6) Troubleshooting
-- If Torch refuses MPS, it will still run on CPU; just slower. You can export a smaller model (`--model medium`).
-- If WhisperX alignment fails to load an aligner for a rare language, try `--language en` (WhisperX will pick a suitable align model).
-
-Enjoy!
+## License
+MIT
