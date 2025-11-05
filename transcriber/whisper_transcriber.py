@@ -232,9 +232,12 @@ class WhisperTranscriber:
         rprint(f"[bold]Model:[/bold] {self.model_name}   [bold]Compute:[/bold] {self.compute_type}   [bold]Lang:[/bold] {self.language or 'auto'}")
         rprint(f"[bold]Device:[/bold] {self.device}      [bold]Model cache:[/bold] {os.path.abspath(self.model_dir)}")
 
-        # Step 1: Normalize audio
-        rprint("[green]Step 1/3:[/green] Normalize audio → 16k mono WAV")
-        ffmpeg_norm(input_file, wav)
+        # Step 1: Normalize audio (cache the 16k WAV for reuse)
+        if os.path.exists(wav):
+            rprint("[green]Step 1/3:[/green] Normalize audio → 16k mono WAV [cached]")
+        else:
+            rprint("[green]Step 1/3:[/green] Normalize audio → 16k mono WAV")
+            ffmpeg_norm(input_file, wav)
 
         # Step 2: Transcribe
         rprint("[green]Step 2/3:[/green] Transcribe with faster-whisper")
